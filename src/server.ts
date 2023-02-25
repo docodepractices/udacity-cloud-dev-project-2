@@ -1,6 +1,7 @@
-import express from 'express';
+import express, { NextFunction } from 'express';
+import { Application, Request, Response, Errback } from "express";
 import bodyParser from 'body-parser';
-import {filterImageFromURL, deleteLocalFiles} from './util/util';
+import { filterImageFromURL, deleteLocalFiles } from './util/util';
 
 (async () => {
 
@@ -9,7 +10,7 @@ import {filterImageFromURL, deleteLocalFiles} from './util/util';
 
   // Set the network port
   const port = process.env.PORT || 8082;
-  
+
   // Use the body parser middleware for post requests
   app.use(bodyParser.json());
 
@@ -30,39 +31,44 @@ import {filterImageFromURL, deleteLocalFiles} from './util/util';
   /**************************************************************************** */
 
   const isValidUrl = (urlString: string) => {
-    var urlPattern = new RegExp('^(https?:\\/\\/)?'+ // validate protocol
-    '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|'+ // validate domain name
-    '((\\d{1,3}\\.){3}\\d{1,3}))'+ // validate OR ip (v4) address
-    '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*'+ // validate port and path
-    '(\\?[;&a-z\\d%_.~+=-]*)?'+ // validate query string
-    '(\\#[-a-z\\d_]*)?$','i'); // validate fragment locator
-  return !!urlPattern.test(urlString);
-}
+    var urlPattern = new RegExp('^(https?:\\/\\/)?' + // validate protocol
+      '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // validate domain name
+      '((\\d{1,3}\\.){3}\\d{1,3}))' + // validate OR ip (v4) address
+      '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // validate port and path
+      '(\\?[;&a-z\\d%_.~+=-]*)?' + // validate query string
+      '(\\#[-a-z\\d_]*)?$', 'i'); // validate fragment locator
+    return !!urlPattern.test(urlString);
+  }
 
-  app.get("/filteredimage", async (req, res) => {
+  const getFilteredImageFunc = async (req: Request, res: Response, next: NextFunction) => {
     const { image_url: imageUrl } = req.query;
 
     if (!imageUrl || !isValidUrl(imageUrl.toString())) {
       return res.status(400).send({ auth: false, message: 'Image url is missing in query string or malformed' });
     }
 
-    const filteredPath = await filterImageFromURL(imageUrl.toString());
+    try {
+      const filteredPath = await filterImageFromURL(imageUrl.toString());
+      res.sendFile(filteredPath, {}, () => deleteLocalFiles([filteredPath]));
+    } catch (error) {
+      res.status(500).send("Something went wrong");
+    }
+  }
 
-    res.sendFile(filteredPath, {}, () => deleteLocalFiles([filteredPath]));
-  });
+  app.get("/filteredimage", getFilteredImageFunc)
 
   //! END @TODO1
-  
+
   // Root Endpoint
   // Displays a simple message to the user
-  app.get( "/", async ( req, res ) => {
+  app.get("/", async (req, res) => {
     res.send("try GET /filteredimage?image_url={{}}")
-  } );
-  
+  });
+
 
   // Start the Server
-  app.listen( port, () => {
-      console.log( `server running http://localhost:${ port }` );
-      console.log( `press CTRL+C to stop server` );
-  } );
+  app.listen(port, () => {
+    console.log(`server running http://localhost:${port}`);
+    console.log(`press CTRL+C to stop server`);
+  });
 })();
